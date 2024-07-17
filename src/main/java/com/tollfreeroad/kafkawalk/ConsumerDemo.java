@@ -24,11 +24,40 @@ public class ConsumerDemo {
 
         KafkaConsumer<String, String> consumer = new KafkaConsumer<>(props);
 
-        consumer.subscribe(Arrays.asList("vin_topic"));
-        while (true) {
-            ConsumerRecords<String, String> records = consumer.poll(Duration.ofMillis(100));
-            for (ConsumerRecord<String, String> record : records)
-                System.out.printf("partition = %d, offset = %d, key = %s, value = %s%n", record.partition(), record.offset(), record.key(), record.value());
+        final Thread mainThread = Thread.currentThread();
+
+        Runtime.getRuntime().addShutdownHook(new Thread(){
+            @Override
+            public void run() {
+                super.run();
+                log.info("Shutdown buttons were pressed");
+                consumer.wakeup();
+                try {
+                    mainThread.join();
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                    throw new RuntimeException(e);
+                }
+            }
+        });
+
+        try {
+            consumer.subscribe(Arrays.asList("vin_topic"));
+            while (true) {
+                ConsumerRecords<String, String> records = consumer.poll(Duration.ofMillis(100));
+                for (ConsumerRecord<String, String> record : records)
+                    System.out.printf("partition = %d, offset = %d, key = %s, value = %s%n", record.partition(), record.offset(), record.key(), record.value());
+            }
+        }
+        catch(WakeupException e){
+            log.info("Consumer is shutting down gracefully");
+        }
+        catch(Exception e){
+            log.error("Something else went wrong while gracefully closing the consumer");
+        }
+        finally {
+            consumer.close();
+            log.info("Consumer was successfully closed");
         }
     }
 }
